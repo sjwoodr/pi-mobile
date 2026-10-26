@@ -371,6 +371,8 @@ pre.diff .h { color: var(--muted); }
 .empty li { counter-increment: step; display: grid; grid-template-columns: 28px 1fr; gap: 12px; align-items: start; font-size: 15px; }
 .empty li::before { content: counter(step); width: 28px; height: 28px; border-radius: 50%; background: var(--accent-soft); color: var(--accent-ink); font-weight: 700; font-size: 14px; display: inline-flex; align-items: center; justify-content: center; }
 .empty .spinner { margin-bottom: 14px; }
+.empty .pair-form { width: 100%; max-width: 320px; margin-top: 20px; text-align: left; }
+.pair-form .err-line { margin-top: 10px; }
 .spinner { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--fill-2); border-top-color: var(--busy); animation: spin .8s linear infinite; flex: none; }
 
 /* ── pi asks ──────────────────────────────────────────────────────────────────── */

@@ -185,8 +185,62 @@
 		$("olderBtn").hidden = true;
 		setHeader();
 		showEmpty(
-			`<img class="logo" src="icon.svg" alt=""><h2>Connect to pi</h2>${reason ? `<p>${esc(reason)}.</p>` : "<p>Use your pi sessions from this phone.</p>"}<ol><li><span>In pi on your computer, run <code>/remote</code></span></li><li><span>Scan the QR code with this phone's camera</span></li><li><span>Add this page to your Home Screen</span></li></ol>`,
+			`<img class="logo" src="icon.svg" alt=""><h2>Connect to pi</h2>${reason ? `<p>${esc(reason)}.</p>` : "<p>Use your pi sessions from this phone.</p>"}${
+				installed()
+					? "<ol><li><span>In pi on your computer, run <code>/remote pair</code></span></li><li><span>In the Camera app, touch and hold the QR code, then tap Copy Link</span></li><li><span>Paste the link here</span></li></ol>"
+					: "<ol><li><span>In pi on your computer, run <code>/remote</code></span></li><li><span>Scan the QR code with this phone's camera</span></li><li><span>Add this page to your Home Screen</span></li></ol>"
+			}`,
 		);
+		if (installed()) pairLinkForm();
+	}
+
+	/** Opened from the Home Screen: an installed web app, with no address bar and storage of its own. */
+	const installed = () => navigator.standalone === true || matchMedia("(display-mode: standalone)").matches;
+
+	/**
+	 * Pairs an installed app from a pasted `/remote pair` link (#6). On iPhone it doesn't share Safari's
+	 * storage, so a pairing made in Safari never reaches it, and scanning a code opens Safari, not the app.
+	 */
+	function pairLinkForm() {
+		const form = el("div", "pair-form");
+		const input = el("input");
+		input.type = "url";
+		input.placeholder = "https://….ts.net/#p=…";
+		input.autocomplete = "off";
+		const f = el("label", "field");
+		f.append(el("span", "", "Pairing link"), input);
+		const err = el("p", "err-line");
+		err.setAttribute("role", "alert");
+		err.hidden = true;
+		const fail = (text) => {
+			err.textContent = text;
+			err.hidden = false;
+		};
+		const go = el("button", "btn primary", "Pair");
+		go.onclick = () => {
+			let url;
+			try {
+				url = new URL(input.value.trim());
+			} catch {}
+			if (!url || !/[#&]p=[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/.test(url.hash)) return fail("That isn't a pairing link. Run /remote pair in pi and copy its link.");
+			if (url.origin !== location.origin) return fail(`That link is for ${url.host}. Run /remote pair on the computer this app opens.`);
+			// The page pairs from its address on load, as after a scan: this app's own device, revocable on its own.
+			location.hash = url.hash;
+			location.reload();
+		};
+		form.append(f, err);
+		if (navigator.clipboard?.readText) {
+			const paste = el("button", "btn");
+			paste.append(icon("copy"), "Paste");
+			paste.onclick = async () => {
+				try {
+					input.value = (await navigator.clipboard.readText()).trim();
+				} catch {}
+			};
+			form.append(paste);
+		}
+		form.append(go);
+		$("empty").append(form);
 	}
 
 	function showEmpty(html) {

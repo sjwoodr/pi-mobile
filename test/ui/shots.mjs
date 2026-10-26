@@ -204,6 +204,22 @@ async function session(theme, width, flow) {
 			await assertNoSound(page);
 			await sleep(600);
 			await shot("01-unpaired");
+			await step("unpaired installed", async () => {
+				// An iPhone Home Screen app: no Safari storage, no address bar; it pairs from a pasted link (#6).
+				const standalone = await page.evaluateOnNewDocument(() => Object.defineProperty(navigator, "standalone", { value: true }));
+				try {
+					await page.goto(link.split("#")[0]);
+					await page.waitForSelector(".pair-form input");
+					await sleep(400);
+					await shot("01b-unpaired-installed");
+					await page.type(".pair-form input", "https://other-box.example.ts.net/#p=abc.def");
+					await tap(".pair-form .btn.primary");
+					await page.waitForSelector(".pair-form .err-line:not([hidden])");
+					await shot("01c-pair-link-error");
+				} finally {
+					await page.removeScriptToEvaluateOnNewDocument(standalone.identifier);
+				}
+			});
 			await page.goto("about:blank");
 			await ready();
 			await shot("02-opens-on-waiting-session");
