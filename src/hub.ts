@@ -392,13 +392,18 @@ export class Hub {
 				if ((await apns.send(token, { sealed, urgent: msg.urgent })) === "gone") this.push.setApns(id, undefined);
 			}),
 			// App Store app: the same sealed payload through the push relay; 410 means the cap is dead.
-			...this.push.relayEntries().map(async ([id, target]) => {
+			...(this.relayOff() ? [] : this.push.relayEntries()).map(async ([id, target]) => {
 				const device = this.devices.get(id);
 				if (!device) return this.push.setRelay(id, undefined);
 				const sealed = seal(unb64u(device.key), payload);
 				if ((await this.relayClient.send(target, { sealed, urgent: msg.urgent })) === "gone") this.push.setRelay(id, undefined);
 			}),
 		]);
+	}
+
+	/** The computer's owner turned the push relay off (`"relay": false` or PI_MOBILE_RELAY=off). */
+	private relayOff(): boolean {
+		return this.config.relay === false || process.env.PI_MOBILE_RELAY === "off";
 	}
 
 	private relayClientInstance?: RelayClient;
@@ -597,8 +602,8 @@ export class Hub {
 					apns: !!this.apnsClient(),
 					apnsOn: this.push.apnsEntries().some(([id]) => id === device.id),
 					// App Store app: this hub forwards to a push relay; `relayOn`: this device's relay cap is stored.
-					relay: true,
-					relayOn: this.push.relayEntries().some(([id]) => id === device.id),
+					relay: !this.relayOff(),
+					relayOn: !this.relayOff() && this.push.relayEntries().some(([id]) => id === device.id),
 				};
 			case "focus": {
 				for (const c of this.clients) if (c.id === p.client && c.device.id === device.id) c.focus = String(p.agent ?? "") || undefined;
@@ -607,6 +612,7 @@ export class Hub {
 			case "push": {
 				// iPhone app: `{ apns: { token, sandbox } }` (own-team builds) and/or `{ relay: { url, cap } }`
 				// (App Store app); null turns either off. Stored beside Web Push.
+				if ("relay" in p && p.relay !== null && this.relayOff()) throw new Error("push relay is turned off on this computer");
 				if ("relay" in p && p.relay !== null && !isRelayTarget(p.relay)) throw new Error("invalid push relay");
 				if ("apns" in p) {
 					if (p.apns !== null && !isApnsToken(p.apns)) throw new Error("invalid APNs token");
@@ -614,7 +620,7 @@ export class Hub {
 				}
 				if ("relay" in p) this.push.setRelay(device.id, p.relay ? { url: relayUrl(p.relay.url)!, cap: p.relay.cap } : undefined);
 				if (("apns" in p || "relay" in p) && !("subscription" in p))
-					return { ok: true, apns: !!this.apnsClient(), relay: true, relayOn: this.push.relayEntries().some(([id]) => id === device.id) };
+					return { ok: true, apns: !!this.apnsClient(), relay: !this.relayOff(), relayOn: !this.relayOff() && this.push.relayEntries().some(([id]) => id === device.id) };
 				const sub = p.subscription as PushSubscriptionJSON | null;
 				if (sub && !(typeof sub.endpoint === "string" && sub.endpoint.startsWith("https://") && sub.keys?.p256dh && sub.keys?.auth))
 					throw new Error("invalid push subscription");

@@ -34,6 +34,11 @@ export interface Config {
 	 * runs here: an existing serve for the port is reused, else one is added. Default on; false skips.
 	 */
 	tailscale?: boolean;
+	/**
+	 * Notifications through a push relay (the App Store app's path). Default on; false (or
+	 * PI_MOBILE_RELAY=off) means this computer never sends to one, whatever a paired phone registers.
+	 */
+	relay?: boolean;
 	/** HTTPS addresses of your other machines that aren't on Tailscale (`*.ts.net` is always allowed). */
 	machineOrigins?: string[];
 	/** iPhone push through Apple (APNs) with your own `.p8` key; set with /remote settings. */
