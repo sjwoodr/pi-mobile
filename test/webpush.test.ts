@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { createPublicKey, verify } from "node:crypto";
+import { createECDH, createPublicKey, randomBytes, verify } from "node:crypto";
 import { test } from "node:test";
-import { encryptPayload, generateVapid, vapidAuthorization } from "../src/webpush.ts";
+import { encryptPayload, generateVapid, sendPush, VAPID_SUBJECT, vapidAuthorization } from "../src/webpush.ts";
 
 const u = (s: string) => Buffer.from(s.replace(/\s+/g, ""), "base64url");
 
@@ -27,4 +27,25 @@ test("VAPID authorization is a valid ES256 JWT for the endpoint's origin", () =>
 	const raw = u(vapid.publicKey);
 	const key = createPublicKey({ format: "jwk", key: { kty: "EC", crv: "P-256", x: raw.subarray(1, 33).toString("base64url"), y: raw.subarray(33).toString("base64url") } });
 	assert.ok(verify("sha256", Buffer.from(`${m[1]}.${m[2]}`), { key, dsaEncoding: "ieee-p1363" }, u(m[3])));
+});
+
+test("sendPush signs with a subject Apple accepts (not @localhost, which gets 403 BadJwtToken)", async () => {
+	const ecdh = createECDH("prime256v1");
+	ecdh.generateKeys();
+	const sub = { endpoint: "https://web.push.apple.com/abc", keys: { p256dh: ecdh.getPublicKey().toString("base64url"), auth: randomBytes(16).toString("base64url") } };
+	const real = globalThis.fetch;
+	let auth = "";
+	globalThis.fetch = (async (_url: string, init: RequestInit) => {
+		auth = (init.headers as Record<string, string>).Authorization;
+		return new Response(null, { status: 201 });
+	}) as typeof fetch;
+	try {
+		assert.equal(await sendPush(sub, { title: "pi" }, generateVapid()), "sent");
+	} finally {
+		globalThis.fetch = real;
+	}
+	const claims = JSON.parse(Buffer.from(/^vapid t=[^.]+\.([^.]+)\./.exec(auth)![1], "base64url").toString());
+	assert.equal(claims.sub, VAPID_SUBJECT);
+	assert.match(claims.sub, /^(https:\/\/|mailto:)/);
+	assert.doesNotMatch(claims.sub, /localhost/);
 });

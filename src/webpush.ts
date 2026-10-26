@@ -69,6 +69,12 @@ export function vapidAuthorization(endpoint: string, vapid: Vapid, subject: stri
 	return `vapid t=${unsigned}.${sig.toString("base64url")}, k=${vapid.publicKey}`;
 }
 
+/**
+ * VAPID `sub` claim: a contact for the push service. Apple's (web.push.apple.com) rejects an
+ * unreachable one such as `mailto:…@localhost` with 403 BadJwtToken, so every iPhone push failed.
+ */
+export const VAPID_SUBJECT = "https://github.com/jkeskikangas/pi-mobile";
+
 export type PushResult = "sent" | "gone" | "failed";
 
 export async function sendPush(sub: PushSubscriptionJSON, payload: unknown, vapid: Vapid, urgency: "normal" | "high" = "normal"): Promise<PushResult> {
@@ -76,7 +82,7 @@ export async function sendPush(sub: PushSubscriptionJSON, payload: unknown, vapi
 		const res = await fetch(sub.endpoint, {
 			method: "POST",
 			headers: {
-				Authorization: vapidAuthorization(sub.endpoint, vapid, "mailto:pi-mobile@localhost"),
+				Authorization: vapidAuthorization(sub.endpoint, vapid, VAPID_SUBJECT),
 				"Content-Encoding": "aes128gcm",
 				"Content-Type": "application/octet-stream",
 				TTL: urgency === "high" ? "600" : "3600",
