@@ -40,7 +40,7 @@ export type Item =
 	| { k: "user"; id: string; text: string; images: number; ts: number }
 	| { k: "assistant"; id: string; blocks: Block[]; model?: string; stop?: string; error?: string; ts: number }
 	| { k: "tool"; id: string; name: string; output: string; isError: boolean; truncated: boolean; diff?: string; images?: number; ts: number }
-	| { k: "bash"; id: string; command: string; output: string; exitCode?: number; ts: number }
+	| { k: "bash"; id: string; command: string; output: string; exitCode?: number; excluded?: boolean; ts: number }
 	| { k: "custom"; id: string; customType: string; text: string; ts: number }
 	| { k: "summary"; id: string; kind: "compaction" | "branch"; text: string; ts: number };
 
@@ -127,6 +127,28 @@ function argsText(args: unknown): string {
 // pi messages are an open union with custom roles; read them structurally.
 type AnyMessage = any;
 
+/**
+ * A `!command` sent from a phone. pi runs `!` itself only for terminal input, so the bridge runs
+ * the command and records it as a custom message of this type; `details` carries what a phone
+ * shows, and `excluded` (`!!`) keeps it out of the model's context (the `context` hook).
+ */
+export const PHONE_BASH = "pi-mobile-bash";
+
+export interface PhoneBashDetails {
+	command: string;
+	output: string;
+	exitCode?: number;
+	excluded: boolean;
+}
+
+function customItem(customType: string, content: Content, details: any, id: string, ts: number): Item {
+	if (customType === PHONE_BASH && typeof details?.command === "string") {
+		const out = clip(String(details.output ?? ""), TOOL_OUTPUT_LIMIT);
+		return { k: "bash", id, command: details.command, output: out.text, exitCode: details.exitCode, excluded: !!details.excluded, ts };
+	}
+	return { k: "custom", id, customType, text: contentText(content), ts };
+}
+
 /** Converts one pi AgentMessage to a transcript item, or undefined for messages a phone need not show. */
 export function messageToItem(message: AnyMessage, id: string): Item | undefined {
 	const ts = typeof message?.timestamp === "number" ? message.timestamp : Date.now();
@@ -173,7 +195,7 @@ export function messageToItem(message: AnyMessage, id: string): Item | undefined
 		}
 		case "custom":
 			if (message.display === false) return undefined;
-			return { k: "custom", id, customType: message.customType, text: contentText(message.content), ts };
+			return customItem(message.customType, message.content, message.details, id, ts);
 		case "compactionSummary":
 			return { k: "summary", id, kind: "compaction", text: message.summary, ts };
 		case "branchSummary":
@@ -194,7 +216,7 @@ export function branchToItems(entries: readonly AnyEntry[]): Item[] {
 			const item = messageToItem(e.message, e.id);
 			if (item) items.push(item);
 		} else if (e.type === "custom_message" && e.display) {
-			items.push({ k: "custom", id: e.id, customType: e.customType, text: contentText(e.content), ts });
+			items.push(customItem(e.customType, e.content, e.details, e.id, ts));
 		} else if (e.type === "compaction") {
 			items.push({ k: "summary", id: e.id, kind: "compaction", text: e.summary, ts });
 		} else if (e.type === "branch_summary") {

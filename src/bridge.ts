@@ -19,6 +19,8 @@ import {
 	findToolOutput,
 	type Item,
 	messageToItem,
+	PHONE_BASH,
+	type PhoneBashDetails,
 	type Prompt,
 	type Status,
 	toolTitle,
@@ -33,6 +35,10 @@ const COUNTER_KEY = Symbol.for("pi-mobile.counter");
 const BRIDGE_KEY = Symbol.for("pi-mobile.bridge");
 const PATCHED = Symbol.for("pi-mobile.patched");
 const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"];
+/** A `!command` from a phone stops after this; the phone has no Esc. */
+const PHONE_BASH_TIMEOUT_MS = 60_000;
+/** Output kept for the model and the session file (the tail, like tool output). */
+const PHONE_BASH_OUTPUT_LIMIT = 30_000;
 
 type G = typeof globalThis & { [AGENT_KEY]?: string; [BRIDGE_KEY]?: Bridge; [COUNTER_KEY]?: number };
 
@@ -525,7 +531,7 @@ export class Bridge {
 		};
 	}
 
-	private send(p: any, from: string): { ok: true; delivered: "prompt" | "steer" | "followUp" | "command" } {
+	private async send(p: any, from: string): Promise<{ ok: true; delivered: "prompt" | "steer" | "followUp" | "command" | "bash" }> {
 		const text = typeof p.text === "string" ? p.text : "";
 		const images = Array.isArray(p.images)
 			? p.images
@@ -533,6 +539,11 @@ export class Bridge {
 					.map((i: any) => ({ type: "image" as const, data: i.data, mimeType: i.mimeType }))
 			: [];
 		if (!text.trim() && !images.length) throw new Error("empty message");
+		const bang = /^!(!?)([\s\S]*)$/.exec(text.trim());
+		if (bang && bang[2].trim() && !images.length) {
+			await this.bash(bang[2].trim(), bang[1] === "!", from);
+			return { ok: true, delivered: "bash" };
+		}
 		const compact = /^\/compact(?:\s+([\s\S]*))?$/.exec(text.trim());
 		if (compact && !images.length) {
 			this.ctx.compact(compact[1] ? { customInstructions: compact[1] } : undefined);
@@ -549,6 +560,24 @@ export class Bridge {
 		this.pi.sendUserMessage(content, { deliverAs, expandPromptTemplates: true });
 		this.pushInfo();
 		return { ok: true, delivered: deliverAs };
+	}
+
+	/**
+	 * `!command` from a phone, as pi does for terminal input: run it in the session's folder and
+	 * record command and output, for the model with the next prompt (`!`) or only for the user
+	 * (`!!`). Like the terminal's, it starts no turn; while pi works, pi adds it after the turn.
+	 * A phone can't press Esc, so a command stops after PHONE_BASH_TIMEOUT_MS.
+	 */
+	private async bash(command: string, excluded: boolean, from: string): Promise<void> {
+		originalNotify(this.ctx)?.(`From ${from}: !${excluded ? "!" : ""}${command.split("\n")[0].slice(0, 60)}`, "info");
+		const r = await this.pi.exec("bash", ["-c", command], { cwd: this.ctx.cwd, timeout: PHONE_BASH_TIMEOUT_MS });
+		const output = clip([r.stdout, r.stderr].map((s) => s.replace(/\n+$/, "")).filter(Boolean).join("\n"), PHONE_BASH_OUTPUT_LIMIT).text;
+		const exitCode = r.killed ? undefined : r.code;
+		let content = `Ran \`${command}\`\n${output ? `\`\`\`\n${output}\n\`\`\`` : "(no output)"}`;
+		if (r.killed) content += `\n\n(stopped after ${PHONE_BASH_TIMEOUT_MS / 1000} s)`;
+		else if (exitCode !== 0) content += `\n\nCommand exited with code ${exitCode}`;
+		const details: PhoneBashDetails = { command, output, exitCode, excluded };
+		this.pi.sendMessage({ customType: PHONE_BASH, content, display: true, details });
 	}
 
 	private models() {
