@@ -204,7 +204,11 @@ test("prompts from the phone reach pi, steering or queueing while it works", asy
 test("!command from the phone runs in the session's folder, as pi's terminal ! does", async () => {
 	const prompts = h.sent.length;
 	h.setExec({ stdout: "On branch main\n", stderr: "warning: x\n" });
+	phone.events = [];
 	assert.deepEqual(await call("send", { text: "!git status" }), { ok: true, delivered: "bash" });
+	// The phone gets it live: pi's sendMessage fires no message_end for extensions.
+	const live = (await phone.waitFor((e) => e.type === "item" && e.item.k === "bash")).item;
+	assert.deepEqual([live.command, live.output, live.exitCode, live.excluded], ["git status", "On branch main\nwarning: x", 0, false]);
 	assert.deepEqual(h.execs.at(-1), { command: "bash", args: ["-c", "git status"], options: { cwd: "/work/project", timeout: 60000 } });
 	const { message, options } = h.messages.at(-1);
 	assert.equal(options, undefined, "starts no turn: the model sees it with the next prompt");
