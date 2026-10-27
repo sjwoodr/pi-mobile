@@ -569,7 +569,7 @@
 				const ti = el("span", "ticon");
 				ti.appendChild(icon("terminal"));
 				const st = el("span", "tstate");
-				s.append(ti, el("span", "tname", "You ran"), el("span", "ttitle", item.command), st);
+				s.append(ti, el("span", "tname", item.excluded ? "You ran (not sent to pi)" : "You ran"), el("span", "ttitle", item.command), st);
 				const body = el("div", "tbody");
 				body.appendChild(scrollBox(el("pre", "out", item.output || "(no output)")));
 				node.append(s, body);

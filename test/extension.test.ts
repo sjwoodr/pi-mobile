@@ -18,6 +18,9 @@ type Handler = (event: any, ctx: any) => Promise<any> | any;
 function host() {
 	const handlers = new Map<string, Handler[]>();
 	const sent: any[] = [];
+	const execs: any[] = [];
+	const messages: any[] = [];
+	let execResult = { stdout: "", stderr: "", code: 0, killed: false };
 	const statuses: (string | undefined)[] = [];
 	const notes: string[] = [];
 	const localDialogs: { title: string; resolve: (v: any) => void; aborted: boolean }[] = [];
@@ -85,6 +88,8 @@ function host() {
 		setModel: async (m: any) => sent.push({ model: m.id }) > 0,
 		getCommands: () => [{ name: "review", description: "Review code", source: "extension" }],
 		sendUserMessage: (content: any, options: any) => sent.push({ content, options }),
+		sendMessage: (message: any, options: any) => messages.push({ message, options }),
+		exec: async (command: string, args: string[], options: any) => (execs.push({ command, args, options }), execResult),
 	};
 	remoteControl(pi);
 	const fire = async (name: string, event: any = {}) => {
@@ -92,7 +97,19 @@ function host() {
 		for (const fn of handlers.get(name) ?? []) results.push(await fn({ type: name, ...event }, ctx));
 		return results;
 	};
-	return { fire, ctx, sent, statuses, notes, localDialogs, thinking: () => thinking, setIdle: (v: boolean) => (idle = v) };
+	return {
+		fire,
+		ctx,
+		sent,
+		execs,
+		messages,
+		statuses,
+		notes,
+		localDialogs,
+		thinking: () => thinking,
+		setIdle: (v: boolean) => (idle = v),
+		setExec: (r: Partial<typeof execResult>) => (execResult = { stdout: "", stderr: "", code: 0, killed: false, ...r }),
+	};
 }
 
 let h: ReturnType<typeof host>;
@@ -182,6 +199,48 @@ test("prompts from the phone reach pi, steering or queueing while it works", asy
 	assert.deepEqual(h.sent.at(-1), { abort: true });
 	h.setIdle(true);
 	await assert.rejects(call("send", { text: "  " }), /empty/);
+});
+
+test("!command from the phone runs in the session's folder, as pi's terminal ! does", async () => {
+	const prompts = h.sent.length;
+	h.setExec({ stdout: "On branch main\n", stderr: "warning: x\n" });
+	assert.deepEqual(await call("send", { text: "!git status" }), { ok: true, delivered: "bash" });
+	assert.deepEqual(h.execs.at(-1), { command: "bash", args: ["-c", "git status"], options: { cwd: "/work/project", timeout: 60000 } });
+	const { message, options } = h.messages.at(-1);
+	assert.equal(options, undefined, "starts no turn: the model sees it with the next prompt");
+	assert.deepEqual(message.details, { command: "git status", output: "On branch main\nwarning: x", exitCode: 0, excluded: false });
+	assert.equal(message.content, "Ran `git status`\n```\nOn branch main\nwarning: x\n```");
+	assert.equal(message.display, true);
+	assert.match(h.notes.at(-1)!, /From test phone: !git status/);
+
+	h.setExec({ code: 2 });
+	await call("send", { text: "!! ls nope" });
+	const failed = h.messages.at(-1).message;
+	assert.deepEqual(failed.details, { command: "ls nope", output: "", exitCode: 2, excluded: true });
+	assert.equal(failed.content, "Ran `ls nope`\n(no output)\n\nCommand exited with code 2");
+
+	h.setExec({ stdout: "tick\n", killed: true, code: 143 });
+	await call("send", { text: "!tail -f log" });
+	const stopped = h.messages.at(-1).message;
+	assert.equal(stopped.details.exitCode, undefined);
+	assert.match(stopped.content, /\(stopped after 60 s\)$/);
+	assert.equal(h.sent.length, prompts, "none of them went to the model as a prompt");
+
+	// A lone "!" or one with an image is an ordinary prompt.
+	await call("send", { text: "!" });
+	assert.deepEqual(h.sent.at(-1), { content: "!", options: { expandPromptTemplates: true } });
+
+	// !! output stays in the session but out of the model's context; ! output goes in.
+	// pi stores a sendMessage as a "custom" role message.
+	const custom = (m: any) => ({ role: "custom", ...m });
+	const fired = await h.fire("context", { messages: [custom(h.messages.at(-3).message), custom(failed), { role: "user", content: "next" }] });
+	const result = fired.find((r) => r?.messages);
+	assert.deepEqual(
+		result.messages.map((m: any) => m.details?.command ?? m.content),
+		["git status", "next"],
+	);
+	const plain = await h.fire("context", { messages: [{ role: "user", content: "hi" }] });
+	assert.ok(plain.every((r) => !r?.messages), "unchanged context is left alone");
 });
 
 test("model, thinking and command lists", async () => {

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { branchToItems, clip, findImage, findToolOutput, messageToItem, toolTitle } from "../src/protocol.ts";
+import { branchToItems, clip, findImage, findToolOutput, messageToItem, PHONE_BASH, toolTitle } from "../src/protocol.ts";
 
 test("assistant messages become text, thinking and tool blocks", () => {
 	const item = messageToItem(
@@ -71,6 +71,18 @@ test("user images are counted, hidden custom messages dropped, summaries kept", 
 			["custom", "4"],
 		],
 	);
+});
+
+test("a phone's !command shows as a bash item, live and from the session file", () => {
+	const details = { command: "git status", output: "clean", exitCode: 0, excluded: true };
+	const live = messageToItem({ role: "custom", customType: PHONE_BASH, display: true, content: "Ran `git status`", details, timestamp: 7 }, "m1");
+	assert.deepEqual(live, { k: "bash", id: "m1", command: "git status", output: "clean", exitCode: 0, excluded: true, ts: 7 });
+	const [saved] = branchToItems([
+		{ type: "custom_message", id: "e9", timestamp: "2026-01-01T00:00:00Z", display: true, customType: PHONE_BASH, content: "Ran", details },
+	]);
+	assert.deepEqual(saved, { ...live, id: "e9", ts: Date.parse("2026-01-01T00:00:00Z") });
+	// Without its details it is just another custom message.
+	assert.equal(messageToItem({ role: "custom", customType: PHONE_BASH, display: true, content: "x" }, "m2")?.k, "custom");
 });
 
 test("findImage finds user images by entry id or timestamp and tool images by call id", () => {

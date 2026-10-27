@@ -21,7 +21,7 @@ import { Bridge } from "./bridge.ts";
 import { registerHerdrBlocked } from "./herdr.ts";
 import { LOOPBACK_LABEL } from "./expose.ts";
 import { closeProcessHub, type LinkState } from "./link.ts";
-import type { AgentInfo } from "./protocol.ts";
+import { type AgentInfo, PHONE_BASH } from "./protocol.ts";
 import { qrLines } from "./qr.ts";
 import { type Config, configPath, linkSecret, loadConfig, saveConfig, stateDir } from "./store.ts";
 import { loadVoiceConfig, speechDir } from "pi-speech/config";
@@ -91,6 +91,11 @@ export default function piMobile(pi: ExtensionAPI): void {
 	const voice = new VoiceHost({ ctx: () => ctx!, config: () => loadVoiceConfig(), stateDir: speechDir, complete });
 	registerDictation(pi, complete);
 	registerVoiceMode(pi, complete);
+	// `!!command` from a phone: shown in the session, never sent to the model (as pi's own `!!`).
+	pi.on("context", async (e) => {
+		const keep = e.messages.filter((m: any) => !(m.role === "custom" && m.customType === PHONE_BASH && m.details?.excluded));
+		if (keep.length !== e.messages.length) return { messages: keep };
+	});
 	pi.on("before_agent_start", async (e) => {
 		const mode = voice.listeningMode();
 		if (!mode) return;
