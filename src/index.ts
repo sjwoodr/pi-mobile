@@ -405,7 +405,8 @@ export default function piMobile(pi: ExtensionAPI): void {
 		const url = `HTTPS address (voice, lock-screen notifications): ${cfg.publicUrl ?? (cfg.tailscale === false ? "none" : "automatic with Tailscale")}`;
 		const port = `Port: ${cfg.port}`;
 		const apns = `iPhone push (APNs): ${cfg.apns?.keyFile ? `${cfg.apns.topic} · key ${cfg.apns.keyId}${cfg.apns.sandbox ? " · sandbox" : ""}` : "off"}`;
-		const pick = await c.ui.select("pi-mobile settings", [url, port, apns, "Done"]);
+		const relay = `Push relay (App Store app): ${cfg.relay === false ? "off" : "on"}${process.env.PI_MOBILE_RELAY === "off" ? " · off by PI_MOBILE_RELAY" : ""}`;
+		const pick = await c.ui.select("pi-mobile settings", [url, port, apns, relay, "Done"]);
 		const next: Config = { ...cfg };
 		if (pick === url) {
 			const v = await c.ui.input(`HTTPS address that forwards to port ${cfg.port}; empty for automatic (Tailscale Serve)`, cfg.publicUrl ?? "https://");
@@ -445,6 +446,9 @@ export default function piMobile(pi: ExtensionAPI): void {
 				if (!env) return;
 				next.apns = { keyFile: file, keyId: keyId.trim(), teamId: teamId.trim(), topic: topic.trim(), sandbox: env.startsWith("sandbox") };
 			}
+		} else if (pick === relay) {
+			// Turning it off: this computer never sends to a relay, even for phones that registered one.
+			next.relay = cfg.relay === false ? undefined : false;
 		} else return;
 		saveConfig(next);
 		// Linked pi processes re-read the config when they reconnect, so restarting the hub applies it everywhere.

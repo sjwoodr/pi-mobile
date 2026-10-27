@@ -67,7 +67,7 @@ An optional native iPhone app (`native/ios`) shows the same web UI and adds what
 
 ### iPhone push (native app)
 
-**App Store app:** nothing to set up on your computers. When you turn on notifications, the app registers with the open-source [push relay](relay/README.md) and gives each paired computer the relay URL and an opaque capability. The computer seals the session name and text to your phone's device key and sends only that ciphertext. The relay and Apple see a generic "pi / New activity" alert and your device token, never what pi said. If the relay reports the capability dead (`410`), the computer forgets it and the app registers again.
+**App Store app:** nothing to set up on your computers. When you turn on notifications, the app registers with the open-source [push relay](relay/README.md) and gives each paired computer the relay URL and an opaque capability. The computer seals the session name and text to your phone's device key and sends only that ciphertext. The relay and Apple see a generic "pi / New activity" alert and your device token, never what pi said. If the relay reports the capability dead (`410`), the computer forgets it and the app registers again. To keep a computer from ever contacting a relay, turn it off in `/remote settings` (`"relay": false` in `config.json`, or `PI_MOBILE_RELAY=off`): it refuses relay registration and sends nothing to one, while Web Push and your own APNs key still work.
 
 **Self-built app (your own bundle ID and team):** use your own APNs key on each computer instead, or [deploy your own relay](relay/README.md#self-hosting). Direct APNs needs a paid Apple developer account:
 
