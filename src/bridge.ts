@@ -578,6 +578,11 @@ export class Bridge {
 		else if (exitCode !== 0) content += `\n\nCommand exited with code ${exitCode}`;
 		const details: PhoneBashDetails = { command, output, exitCode, excluded };
 		this.pi.sendMessage({ customType: PHONE_BASH, content, display: true, details });
+		// pi tells only its own screen about a sendMessage (no message_end reaches extensions), so
+		// phones get the item from here; without it they saw it only on their next snapshot.
+		const message = { role: "custom", customType: PHONE_BASH, content, display: true, details, timestamp: Date.now() };
+		const item = messageToItem(message, `m${Date.now().toString(36)}${++this.keyCounter}`);
+		if (item) this.emit({ type: "item", item });
 	}
 
 	private models() {
